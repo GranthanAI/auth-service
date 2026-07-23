@@ -21,3 +21,11 @@ class IncorrectPasswordException(AuthServiceException):
 class SamePasswordException(AuthServiceException):
     def __init__(self):
         super().__init__("The new password cannot be the same as the old password.")
+
+class InvalidTokenException(AuthServiceException):
+    def __init__(self, message: str = "Invalid token."):
+        super().__init__(message)
+
+class CompromiseDetectedException(AuthServiceException):
+    def __init__(self):
+        super().__init__("Security compromise detected. All active sessions have been terminated.")
