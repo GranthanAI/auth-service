@@ -2,8 +2,15 @@ import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
 from app.db.base import Base
+
 # Import all models to ensure they register on the Base metadata
 from app.models.user import User
+from app.models.refresh_token import RefreshToken
+from app.models.session import Session
+from app.models.email_verification import EmailVerification
+from app.models.password_reset import PasswordReset
+from app.models.audit_log import AuditLog
+
 from app.core.config import settings
 
 async def create_database_if_not_exists():
