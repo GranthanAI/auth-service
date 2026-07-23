@@ -13,3 +13,11 @@ class UserNotFoundException(AuthServiceException):
     def __init__(self, identifier: str):
         super().__init__(f"User '{identifier}' not found.")
         self.identifier = identifier
+
+class IncorrectPasswordException(AuthServiceException):
+    def __init__(self):
+        super().__init__("The specified current password is incorrect.")
+
+class SamePasswordException(AuthServiceException):
+    def __init__(self):
+        super().__init__("The new password cannot be the same as the old password.")
