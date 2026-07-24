@@ -4,9 +4,13 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import UserStatus
+from app.core.config import settings
 from app.core.exceptions import AuthServiceException, UserNotFoundException
 from app.repositories.user_repository import UserRepository
 from app.repositories.verification_repository import VerificationRepository
+
+from app.events.outbox_publisher import OutboxPublisher
+from app.events.auth_events import EmailVerifiedEvent
 
 class VerificationService:
     @staticmethod
@@ -15,13 +19,11 @@ class VerificationService:
         Generate a cryptographically secure 6-digit numeric verification OTP,
         persist it, print it to the console (developer log), and return it.
         """
-        # Cryptographically secure 6-digit code (between 100000 and 999999)
         code = str(secrets.randbelow(900000) + 100000)
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
         
         await VerificationRepository.create(db, user_id, code, expires_at)
         
-        # Log to uvicorn console in Development Mode
         print(f"\n[DEV MODE] =========================================")
         print(f"[DEV MODE] Verification OTP for user {user_id}: {code}")
         print(f"[DEV MODE] =========================================\n")
@@ -56,6 +58,13 @@ class VerificationService:
                 "status": UserStatus.ACTIVE
             }
         )
+
+        # Transactionally queue EmailVerified outbox event
+        event = EmailVerifiedEvent(
+            user_id=user.id,
+            email=user.email
+        )
+        await OutboxPublisher.queue_event(db, "EmailVerified", event.model_dump())
 
     @classmethod
     async def resend_verification(cls, db: AsyncSession, email: str) -> None:

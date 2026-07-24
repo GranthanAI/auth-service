@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from redis.asyncio import Redis
 
 from app.models.user import User
-from app.api.deps import get_db, get_current_user
+from app.api.deps import get_db, get_current_user, get_redis
 from app.api.schemas.user import UserResponse, ProfileUpdate, PasswordChangeRequest
 from app.services.user_service import UserService
 from app.services.password_service import PasswordService
 from app.services.audit_service import AuditService
+from app.cache.jwt_blacklist import JWTBlacklist
 from app.core.exceptions import (
     AuthServiceException,
     UserNotFoundException,
@@ -63,11 +65,13 @@ async def change_password(
     request: Request,
     payload: PasswordChangeRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis: Redis | None = Depends(get_redis)
 ) -> dict:
     """
     Change the password of the currently authenticated user.
     Checks correctness of the old password, validates complexity, and prevents recycling.
+    Blacklists the active access token to force re-authentication or invalidate the token.
     """
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
@@ -79,6 +83,16 @@ async def change_password(
             new_password=payload.new_password
         )
         
+        # Blacklist the current active access token (since credentials changed)
+        jti = getattr(request.state, "jti", None)
+        token_exp = getattr(request.state, "token_exp", None)
+        if jti and token_exp:
+            from datetime import datetime, timezone
+            now = int(datetime.now(timezone.utc).timestamp())
+            remaining = token_exp - now
+            if remaining > 0:
+                await JWTBlacklist.blacklist_token(jti, remaining, redis=redis)
+
         # Log Audit Log
         await AuditService.log_action(
             db=db,

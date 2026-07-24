@@ -64,3 +64,18 @@ class SessionRepository:
             select(Session).where(Session.user_id == user_id).order_by(Session.last_seen.desc())
         )
         return list(result.scalars().all())
+
+    @staticmethod
+    async def delete_all_for_user_except_session(
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        exclude_session_id: uuid.UUID
+    ) -> None:
+        await db.execute(
+            delete(Session).where(
+                Session.user_id == user_id,
+                Session.id != exclude_session_id
+            )
+        )
+        await db.flush()
+

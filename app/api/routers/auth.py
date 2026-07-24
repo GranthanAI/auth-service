@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Cookie
 from sqlalchemy.ext.asyncio import AsyncSession
+from redis.asyncio import Redis
 
-from app.api.deps import get_db
+from app.api.deps import get_db, get_redis
 from app.api.schemas.user import UserResponse, UserCreate
 from app.api.schemas.auth import (
     LoginRequest,
@@ -17,6 +18,8 @@ from app.services.verification_service import VerificationService
 from app.services.password_reset_service import PasswordResetService
 from app.services.audit_service import AuditService
 from app.repositories.user_repository import UserRepository
+from app.security.rate_limiter import RedisRateLimiter
+from app.cache.login_attempt_cache import LoginAttemptCache
 from app.core.exceptions import (
     UserAlreadyExistsException,
     AuthServiceException,
@@ -33,12 +36,16 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 async def register(
     request: Request,
     user_create: UserCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis: Redis | None = Depends(get_redis)
 ) -> UserResponse:
     """
     Onboard a new user profile using basic validations and encrypt credentials.
     Generates a verification OTP automatically.
     """
+    # Rate limit check (5 attempts per minute)
+    await RedisRateLimiter.check_rate_limit(request, "register", limit=5, redis=redis)
+    
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
     try:
@@ -73,12 +80,24 @@ async def login(
     response: Response,
     request: Request,
     login_payload: LoginRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis: Redis | None = Depends(get_redis)
 ) -> TokenResponse:
     """
     Log in a user. Verifies email/password credentials, logs the device session, 
     and sets a secure HttpOnly refresh token cookie.
     """
+    # Rate limit check (5 attempts per minute)
+    await RedisRateLimiter.check_rate_limit(request, "login", limit=5, redis=redis)
+
+    # Brute force lockout check (max 5 failures per 30 minutes)
+    failed_attempts = await LoginAttemptCache.get_failed_attempts(login_payload.email, redis=redis)
+    if failed_attempts >= 5:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is temporarily locked out due to multiple failed login attempts. Try again in 30 minutes."
+        )
+
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
     try:
@@ -86,6 +105,9 @@ async def login(
             db, login_payload, ip_address, user_agent
         )
         
+        # Reset lockout attempts on successful login
+        await LoginAttemptCache.reset_failed_attempts(login_payload.email, redis=redis)
+
         # Fetch user to log
         user = await UserRepository.get_by_email(db, login_payload.email)
         user_id = user.id if user else None
@@ -111,6 +133,8 @@ async def login(
         )
         return TokenResponse(access_token=access_token, expires_in=expires_in)
     except IncorrectPasswordException:
+        # Increment failed login attempts
+        await LoginAttemptCache.increment_failed_attempts(login_payload.email, redis=redis)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password."
@@ -126,12 +150,16 @@ async def refresh_token(
     response: Response,
     request: Request,
     refresh_token: str | None = Cookie(None),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis: Redis | None = Depends(get_redis)
 ) -> TokenResponse:
     """
     Rotate refresh tokens and issue a new access token (Refresh Token Rotation).
     If token reuse is detected, all user sessions are terminated for safety.
     """
+    # Rate limit check (10 attempts per minute)
+    await RedisRateLimiter.check_rate_limit(request, "refresh", limit=10, redis=redis)
+
     if not refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -178,13 +206,27 @@ async def logout(
     response: Response,
     request: Request,
     refresh_token: str | None = Cookie(None),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis: Redis | None = Depends(get_redis)
 ) -> dict:
     """
-    Revoke current refresh token and clear client cookies.
+    Revoke current refresh token, blacklist access token, and clear client cookies.
     """
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
+
+    # Blacklist current active access token (JWT) if present in headers
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        payload = JWTManager.decode_access_token(token)
+        if payload:
+            from datetime import datetime, timezone
+            now = int(datetime.now(timezone.utc).timestamp())
+            remaining = payload["exp"] - now
+            if remaining > 0:
+                await JWTBlacklist.blacklist_token(payload["jti"], remaining, redis=redis)
+
     if refresh_token:
         try:
             # Look up token to find user_id for logging logout

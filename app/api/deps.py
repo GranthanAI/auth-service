@@ -1,13 +1,17 @@
 from typing import AsyncGenerator
 import uuid
-from fastapi import Depends, HTTPException, status
+from datetime import datetime, timezone
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
+from redis.asyncio import Redis
 
 from app.db.session import async_session
 from app.models.user import User
 from app.services.user_service import UserService
 from app.security.jwt_manager import JWTManager
+from app.cache.redis import RedisClient
+from app.cache.jwt_blacklist import JWTBlacklist
 from app.core.enums import UserStatus
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -20,16 +24,22 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.rollback()
             raise
 
+async def get_redis() -> Redis | None:
+    """Dependency that returns the active Redis client connection instance."""
+    return await RedisClient.get_client()
+
 # OAuth2 scheme handler using Bearer Tokens
 oauth2_scheme = HTTPBearer()
 
 async def get_current_user(
+    request: Request,
     db: AsyncSession = Depends(get_db),
+    redis: Redis | None = Depends(get_redis),
     token_credentials: HTTPAuthorizationCredentials = Depends(oauth2_scheme)
 ) -> User:
     """
-    Decodes and validates the JWT access token from the Authorization header.
-    Returns the authenticated User model instance.
+    Decodes and validates the JWT access token from the Authorization header,
+    checks if it's blacklisted, and returns the authenticated User instance.
     """
     token = token_credentials.credentials
     payload = JWTManager.decode_access_token(token)
@@ -40,6 +50,18 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    # Check if the access token has been blacklisted (revoked)
+    if await JWTBlacklist.is_blacklisted(payload["jti"], redis=redis):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Save JTI and Expiration to request state for endpoints to access
+    request.state.jti = payload["jti"]
+    request.state.token_exp = payload["exp"]
+
     try:
         user_id = uuid.UUID(payload["sub"])
     except ValueError:

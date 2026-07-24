@@ -7,6 +7,9 @@ from app.models.user import User
 from app.security.password_hasher import PasswordHasher
 from app.core.exceptions import UserAlreadyExistsException, UserNotFoundException
 
+from app.events.outbox_publisher import OutboxPublisher
+from app.events.auth_events import UserRegisteredEvent
+
 class UserService:
     @staticmethod
     async def register_user(db: AsyncSession, user_create: UserCreate) -> User:
@@ -19,7 +22,17 @@ class UserService:
         hashed_password = PasswordHasher.hash(user_create.password)
 
         # Persist the user
-        return await UserRepository.create(db, user_create, hashed_password)
+        user = await UserRepository.create(db, user_create, hashed_password)
+
+        # Transactionally queue UserRegistered outbox event
+        event = UserRegisteredEvent(
+            user_id=user.id,
+            email=user.email,
+            full_name=user.full_name
+        )
+        await OutboxPublisher.queue_event(db, "UserRegistered", event.model_dump())
+
+        return user
 
     @staticmethod
     async def get_user_by_id(db: AsyncSession, user_id: uuid.UUID) -> User:

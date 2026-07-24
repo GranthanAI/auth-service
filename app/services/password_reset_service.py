@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import UserStatus
+from app.core.config import settings
 from app.core.exceptions import AuthServiceException, UserNotFoundException, SamePasswordException
 from app.repositories.user_repository import UserRepository
 from app.repositories.password_reset_repository import PasswordResetRepository
@@ -12,6 +13,9 @@ from app.repositories.refresh_token_repository import RefreshTokenRepository
 from app.repositories.session_repository import SessionRepository
 from app.security.password_hasher import PasswordHasher
 from app.security.validators import validate_password_strength
+
+from app.events.outbox_publisher import OutboxPublisher
+from app.events.auth_events import PasswordResetEvent
 
 class PasswordResetService:
     @staticmethod
@@ -30,7 +34,7 @@ class PasswordResetService:
 
         raw_token = secrets.token_urlsafe(32)
         token_hash = cls._hash_token(raw_token)
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.PASSWORD_RESET_EXPIRE_HOURS)
 
         await PasswordResetRepository.create(db, user.id, token_hash, expires_at)
 
@@ -76,3 +80,10 @@ class PasswordResetService:
         # Revoke all tokens and delete all sessions (Security Invalidation)
         await RefreshTokenRepository.revoke_all_for_user(db, user.id)
         await SessionRepository.delete_all_for_user(db, user.id)
+
+        # Transactionally queue PasswordReset outbox event
+        event = PasswordResetEvent(
+            user_id=user.id,
+            email=user.email
+        )
+        await OutboxPublisher.queue_event(db, "PasswordReset", event.model_dump())

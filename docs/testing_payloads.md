@@ -4,7 +4,7 @@ This document lists every endpoint implemented in the **Granthan Auth Service** 
 
 ---
 
-## 1. Registration & Verification Flows (Public)
+## 1. Onboarding & Health Checks (Public)
 
 ### 1.1 Register User Account
 * **Endpoint:** `POST /auth/register`
@@ -33,7 +33,23 @@ This document lists every endpoint implemented in the **Granthan Auth Service** 
   ```
   *(Note: A 6-digit numeric verification OTP is printed to the uvicorn terminal console immediately upon calling this endpoint).*
 
-### 1.2 Verify Email OTP
+### 1.2 Health Diagnostics Check
+* **Endpoint:** `GET /health`
+* **Request Body:** *None*
+* **Response JSON (200 OK):**
+  ```json
+  {
+    "status": "healthy",
+    "services": {
+      "database": "healthy",
+      "redis": "healthy",
+      "kafka": "healthy"
+    }
+  }
+  ```
+  *(Returns a `503 Service Unavailable` status code if PostgreSQL or Redis is down).*
+
+### 1.3 Verify Email OTP
 * **Endpoint:** `POST /auth/verify-email`
 * **Headers:** `Content-Type: application/json`
 * **Request JSON Body:**
@@ -51,7 +67,7 @@ This document lists every endpoint implemented in the **Granthan Auth Service** 
   }
   ```
 
-### 1.3 Resend Verification OTP
+### 1.4 Resend Verification OTP
 * **Endpoint:** `POST /auth/resend-verification`
 * **Headers:** `Content-Type: application/json`
 * **Request JSON Body:**
@@ -158,12 +174,60 @@ This document lists every endpoint implemented in the **Granthan Auth Service** 
 
 ---
 
-## 4. Protected API Flows (Requires Authentication JWT)
+## 4. Session Management (Protected - JWT Required)
 
-> [!IMPORTANT]
+### 4.1 List Active Device Sessions
+* **Endpoint:** `GET /auth/sessions`
+* **Headers:** `Authorization: Bearer <access_token>`
+* **Request Body:** *None*
+* **Response JSON (200 OK):**
+  ```json
+  [
+    {
+      "id": "786a34f5-79cd-4861-a01b-568b209a341b",
+      "device": "Unknown Device",
+      "browser": "Chrome",
+      "os": "Windows",
+      "ip_address": "127.0.0.1",
+      "created_at": "2026-07-24T14:10:00.123456Z",
+      "last_seen": "2026-07-24T14:12:30.987654Z",
+      "expires_at": "2026-08-24T14:10:00.123456Z"
+    }
+  ]
+  ```
+
+### 4.2 Revoke Specific Session (Logout Device)
+* **Endpoint:** `DELETE /auth/sessions/{session_id}`
+* **Headers:** `Authorization: Bearer <access_token>`
+* **Route Param:** `session_id` (e.g. `786a34f5-79cd-4861-a01b-568b209a341b`)
+* **Request Body:** *None*
+* **Response JSON (200 OK):**
+  ```json
+  {
+    "message": "Session revoked successfully."
+  }
+  ```
+
+### 4.3 Revoke All Sessions (Except Current)
+* **Endpoint:** `DELETE /auth/sessions`
+* **Headers:** `Authorization: Bearer <access_token>`
+* **Query Parameter:** `exclude_current=true` *(Set to true to keep current session active, false to log out all devices)*
+* **Request Body:** *None*
+* **Response JSON (200 OK):**
+  ```json
+  {
+    "message": "All other sessions revoked successfully."
+  }
+  ```
+
+---
+
+## 5. Protected API Flows (Requires Authentication JWT)
+
+> [[IMPORTANT]]
 > To access any endpoints in this section, you must copy the `access_token` returned by `POST /auth/login`. In Swagger UI, click **Authorize** at the top-right, paste the JWT string into the token value input field, and click **Authorize**. This attaches the token automatically as the `Authorization: Bearer <JWT>` header.
 
-### 4.1 Fetch Current User Profile
+### 5.1 Fetch Current User Profile
 * **Endpoint:** `GET /auth/me`
 * **Headers:** `Authorization: Bearer <access_token>`
 * **Request Body:** *None*
@@ -182,7 +246,7 @@ This document lists every endpoint implemented in the **Granthan Auth Service** 
   }
   ```
 
-### 4.2 Update Profile
+### 5.2 Update Profile
 * **Endpoint:** `PATCH /auth/profile`
 * **Headers:** `Authorization: Bearer <access_token>`, `Content-Type: application/json`
 * **Request JSON Body:**
@@ -207,7 +271,7 @@ This document lists every endpoint implemented in the **Granthan Auth Service** 
   }
   ```
 
-### 4.3 Change Password
+### 5.3 Change Password
 * **Endpoint:** `POST /auth/change-password`
 * **Headers:** `Authorization: Bearer <access_token>`, `Content-Type: application/json`
 * **Request JSON Body:**
