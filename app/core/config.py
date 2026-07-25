@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     # Database Settings
     DB_ECHO: bool = False
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 10
 
     # Security Throttling & Lockout Settings
     FAILED_LOGIN_LIMIT: int = 5
