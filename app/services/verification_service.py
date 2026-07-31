@@ -64,7 +64,7 @@ class VerificationService:
             user_id=user.id,
             email=user.email
         )
-        await OutboxPublisher.queue_event(db, "EmailVerified", event.model_dump())
+        await OutboxPublisher.queue_event(db, "EmailVerified", event.model_dump(mode="json"))
 
     @classmethod
     async def resend_verification(cls, db: AsyncSession, email: str) -> None:

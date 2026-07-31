@@ -86,4 +86,4 @@ class PasswordResetService:
             user_id=user.id,
             email=user.email
         )
-        await OutboxPublisher.queue_event(db, "PasswordReset", event.model_dump())
+        await OutboxPublisher.queue_event(db, "PasswordReset", event.model_dump(mode="json"))
