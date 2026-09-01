@@ -6,7 +6,7 @@ all: help
 help:
 	@echo "Available commands:"
 	@echo "  make sync       - Install and sync virtual environment packages using uv"
-	@echo "  make infra      - Start local Redis, Zookeeper, and Kafka containers (local PGSQL is used)"
+	@echo "  make infra      - Start shared GraphGPT docker containers (Postgres, Redis, Kafka, etc.)"
 	@echo "  make infra-down - Stop local Redis, Zookeeper, and Kafka containers"
 	@echo "  make init-db    - Check/create database and build database tables"
 	@echo "  make run        - Launch FastAPI application dev server with auto-reload"
@@ -18,13 +18,13 @@ help:
 sync:
 	uv sync
 
-# Start docker infrastructure containers (shares Redis/Kafka from conversation-service)
+# Start shared GraphGPT docker infrastructure containers
 infra:
-	docker compose -f ../conversation-service/docker-compose.yml up -d
+	docker compose -f ../docker-compose.yml up -d
 
-# Stop docker infrastructure containers
+# Stop shared docker infrastructure containers
 infra-down:
-	docker compose -f ../conversation-service/docker-compose.yml down
+	docker compose -f ../docker-compose.yml down
 
 # Run database setup and create tables
 init-db:
