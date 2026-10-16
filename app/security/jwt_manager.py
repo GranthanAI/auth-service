@@ -5,6 +5,9 @@ from jwt.exceptions import PyJWTError
 
 from app.core.config import settings
 
+ACCESS_TOKEN_ISSUER = "https://auth.granthan.com"
+
+
 class JWTManager:
     @staticmethod
     def encode_access_token(user_id: uuid.UUID, email: str, expires_in_seconds: int) -> tuple[str, str]:
@@ -15,7 +18,7 @@ class JWTManager:
         now = datetime.now(timezone.utc)
         jti = str(uuid.uuid4())
         payload = {
-            "iss": "https://auth.granthan.com",
+            "iss": ACCESS_TOKEN_ISSUER,
             "sub": str(user_id),
             "email": email,
             "jti": jti,
@@ -36,7 +39,8 @@ class JWTManager:
                 token,
                 settings.JWT_SECRET_KEY,
                 algorithms=[settings.JWT_ALGORITHM],
-                options={"require": ["sub", "email", "jti", "exp", "iat"]}
+                issuer=ACCESS_TOKEN_ISSUER,
+                options={"require": ["sub", "email", "jti", "exp", "iat", "iss"]}
             )
             return payload
         except PyJWTError:

@@ -57,17 +57,24 @@ class RefreshTokenService:
             session = await SessionRepository.get_by_refresh_token_id(db, db_token.id)
             if session:
                 await SessionRepository.delete_by_id(db, session.id)
+            # The request is about to fail with an exception, which makes the
+            # request-scoped session roll back; persist the cleanup first.
+            await db.commit()
             raise InvalidTokenException("Refresh token has expired.")
 
-        # COMPROMISE DETECTION: If token is already revoked, it means it's being reused!
-        if db_token.revoked:
-            # Revoke all tokens and delete all active sessions for this user immediately
+        # COMPROMISE DETECTION: a token that is already revoked is being reused, and
+        # so is one that loses the atomic claim below (a concurrent refresh with the
+        # same token). Either way the whole family is revoked.
+        # Claim first, atomically: revoking via a separate read-then-write would let
+        # two simultaneous refreshes both pass the `revoked` check.
+        claimed = False if db_token.revoked else await RefreshTokenRepository.claim_for_rotation(db, db_token.id)
+        if not claimed:
             await RefreshTokenRepository.revoke_all_for_user(db, db_token.user_id)
             await SessionRepository.delete_all_for_user(db, db_token.user_id)
+            # Commit before raising: the request-scoped session rolls back on any
+            # exception, which would silently undo the revocation.
+            await db.commit()
             raise CompromiseDetectedException()
-
-        # Token is valid: Revoke the old token (mark revoked=True for compromise detection history)
-        await RefreshTokenRepository.revoke_by_id(db, db_token.id)
 
         # Generate a new token
         new_plain_token, new_db_token = await cls.create_refresh_token(db, db_token.user_id)
