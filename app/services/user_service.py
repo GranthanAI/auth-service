@@ -3,6 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.user_repository import UserRepository
 from app.api.schemas.user import UserCreate, ProfileUpdate
+from app.core.config import settings
+from app.core.enums import UserStatus
 from app.models.user import User
 from app.security.password_hasher import PasswordHasher
 from app.core.exceptions import UserAlreadyExistsException, UserNotFoundException
@@ -23,6 +25,13 @@ class UserService:
 
         # Persist the user
         user = await UserRepository.create(db, user_create, hashed_password)
+
+        if not settings.EMAIL_VERIFICATION_REQUIRED and user.status == UserStatus.PENDING:
+            # No verification step: the account is usable right away. is_email_verified stays False
+            # because the address genuinely has not been verified.
+            user.status = UserStatus.ACTIVE
+            db.add(user)
+            await db.flush()
 
         # Transactionally queue UserRegistered outbox event
         event = UserRegisteredEvent(

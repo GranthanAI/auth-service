@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     FAILED_LOGIN_LIMIT: int = 5
     LOCKOUT_DURATION_SECONDS: int = 1800  # 30 minutes
 
+    # Email verification. OFF by default: sign-up creates an ACTIVE account and the user can log in
+    # immediately (no OTP is generated). Set EMAIL_VERIFICATION_REQUIRED=true to restore the original
+    # flow: PENDING until the emailed 6-digit code is verified, and login is refused until then.
+    # Flipping it to false also lets accounts that are still PENDING log in.
+    EMAIL_VERIFICATION_REQUIRED: bool = False
+
     # Token Expirations
     OTP_EXPIRE_MINUTES: int = 15
     PASSWORD_RESET_EXPIRE_HOURS: int = 1

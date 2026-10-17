@@ -30,6 +30,13 @@ class VerificationService:
         
         return code
 
+    @staticmethod
+    async def on_registration(db: AsyncSession, user_id: uuid.UUID) -> str | None:
+        """Issue the verification OTP for a new account, but only when verification is required."""
+        if not settings.EMAIL_VERIFICATION_REQUIRED:
+            return None
+        return await VerificationService.create_verification_code(db, user_id)
+
     @classmethod
     async def verify_email_code(cls, db: AsyncSession, email: str, code: str) -> None:
         """
