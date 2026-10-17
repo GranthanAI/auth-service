@@ -34,4 +34,5 @@ class UserRepository:
                 setattr(user_obj, field, value)
         db.add(user_obj)
         await db.flush()
+        await db.refresh(user_obj)
         return user_obj

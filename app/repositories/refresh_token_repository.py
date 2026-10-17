@@ -39,6 +39,23 @@ class RefreshTokenRepository:
         await db.flush()
 
     @staticmethod
+    async def claim_for_rotation(db: AsyncSession, token_id: uuid.UUID) -> bool:
+        """Atomically mark a still-valid token revoked. Returns True only for the
+        single caller that flipped it; any concurrent or later caller gets False.
+
+        The check and the write are one conditional UPDATE, so two simultaneous
+        refreshes with the same token cannot both succeed (the second blocks on
+        the row lock, then re-evaluates `revoked = false` and matches nothing).
+        """
+        result = await db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.id == token_id, RefreshToken.revoked.is_(False))
+            .values(revoked=True)
+        )
+        await db.flush()
+        return result.rowcount == 1
+
+    @staticmethod
     async def revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> None:
         await db.execute(
             update(RefreshToken)

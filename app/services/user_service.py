@@ -30,7 +30,7 @@ class UserService:
             email=user.email,
             full_name=user.full_name
         )
-        await OutboxPublisher.queue_event(db, "UserRegistered", event.model_dump())
+        await OutboxPublisher.queue_event(db, "UserRegistered", event.model_dump(mode="json"))
 
         return user
 

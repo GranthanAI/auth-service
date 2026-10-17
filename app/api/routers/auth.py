@@ -3,6 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 
 from app.api.deps import get_db, get_redis
+from app.security.jwt_manager import JWTManager
+from app.cache.jwt_blacklist import JWTBlacklist
 from app.api.schemas.user import UserResponse, UserCreate
 from app.api.schemas.auth import (
     LoginRequest,

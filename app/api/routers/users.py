@@ -48,6 +48,7 @@ async def update_profile(
             ip_address=ip_address,
             user_agent=user_agent
         )
+        await db.commit()
         return updated_user
     except UserNotFoundException as e:
         raise HTTPException(
