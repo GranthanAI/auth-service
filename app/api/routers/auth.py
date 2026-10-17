@@ -43,7 +43,8 @@ async def register(
 ) -> UserResponse:
     """
     Onboard a new user profile using basic validations and encrypt credentials.
-    Generates a verification OTP automatically.
+    Generates a verification OTP only when EMAIL_VERIFICATION_REQUIRED is true; otherwise the account is
+    ACTIVE immediately.
     """
     # Rate limit check (5 attempts per minute)
     await RedisRateLimiter.check_rate_limit(request, "register", limit=5, redis=redis)
@@ -53,8 +54,8 @@ async def register(
     try:
         user = await UserService.register_user(db, user_create)
         
-        # Trigger verification code creation automatically
-        await VerificationService.create_verification_code(db, user.id)
+        # Verification code only when EMAIL_VERIFICATION_REQUIRED (otherwise the account is already ACTIVE)
+        await VerificationService.on_registration(db, user.id)
         
         # Log Audit Log
         await AuditService.log_action(

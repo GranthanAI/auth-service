@@ -11,6 +11,7 @@ from app.services.refresh_token_service import RefreshTokenService
 from app.security.password_hasher import PasswordHasher
 from app.utils.device_parser import parse_user_agent
 from app.core.exceptions import IncorrectPasswordException, AuthServiceException, InvalidTokenException
+from app.core.config import settings
 from app.core.enums import UserStatus
 
 class AuthService:
@@ -35,10 +36,13 @@ class AuthService:
             raise IncorrectPasswordException()
 
         # Enforce account status check
-        if user.status != UserStatus.ACTIVE:
-            if user.status == UserStatus.PENDING:
-                raise AuthServiceException("Email address is not verified yet.")
+        verification_pending = user.status == UserStatus.PENDING and settings.EMAIL_VERIFICATION_REQUIRED
+        if user.status == UserStatus.SUSPENDED or (
+            user.status not in (UserStatus.ACTIVE, UserStatus.PENDING)
+        ):
             raise AuthServiceException("Account is suspended.")
+        if verification_pending:
+            raise AuthServiceException("Email address is not verified yet.")
 
         # Generate access token
         access_token, access_jti, expires_in = JWTService.generate_access_token(user.id, user.email)
