@@ -43,6 +43,10 @@ class AuthService:
             raise AuthServiceException("Account is suspended.")
         if verification_pending:
             raise AuthServiceException("Email address is not verified yet.")
+        if user.status == UserStatus.PENDING:
+            # Verification is not required: a PENDING account (created while it was) is usable. Make it ACTIVE
+            # so every endpoint agrees with login; otherwise /auth/me rejects the token login just issued.
+            user = await UserRepository.update(db, user, {"status": UserStatus.ACTIVE}) or user
 
         # Generate access token
         access_token, access_jti, expires_in = JWTService.generate_access_token(user.id, user.email)

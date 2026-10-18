@@ -113,3 +113,26 @@ async def test_signed_out_device_refreshing_does_not_end_the_remaining_session(s
         new_plain, _, _ = await RefreshTokenService.rotate_refresh_token(db, tokens[0])
         await db.commit()
     assert new_plain
+
+
+async def test_login_activates_a_pending_account_when_verification_is_not_required(session_factory, monkeypatch):
+    """Regression: a PENDING account could log in (200) but every authenticated call then returned 401
+    ('inactive or suspended'), so the UI showed 'Your session expired' right after sign-in."""
+    from app.api.schemas.auth import LoginRequest
+    from app.core.config import settings
+    from app.security.password_hasher import PasswordHasher
+    from app.services.auth_service import AuthService
+
+    monkeypatch.setattr(settings, "EMAIL_VERIFICATION_REQUIRED", False)
+    email = f"{uuid.uuid4().hex[:8]}@example.com"
+    async with session_factory() as db:
+        user = User(id=uuid.uuid4(), email=email, password_hash=PasswordHasher.hash("Str0ng#Passw0rd!"),
+                    is_email_verified=False, status=UserStatus.PENDING)
+        db.add(user)
+        await db.commit()
+    async with session_factory() as db:
+        await AuthService.login(db, LoginRequest(email=email, password="Str0ng#Passw0rd!"), "127.0.0.1", "pytest")
+        await db.commit()
+    async with session_factory() as db:
+        row = (await db.execute(select(User).where(User.email == email))).scalar_one()
+        assert row.status == UserStatus.ACTIVE and row.is_email_verified is False
