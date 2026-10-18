@@ -41,6 +41,10 @@ class UserService:
         )
         await OutboxPublisher.queue_event(db, "UserRegistered", event.model_dump(mode="json"))
 
+        # Load server-generated columns (e.g. updated_at, expired by the status UPDATE above)
+        # inside the async session; otherwise serialising the response lazy-loads them
+        # outside the greenlet and registration fails with a 500 (MissingGreenlet).
+        await db.refresh(user)
         return user
 
     @staticmethod

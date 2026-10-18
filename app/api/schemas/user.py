@@ -32,6 +32,23 @@ class ProfileUpdate(BaseModel):
     full_name: str | None = Field(None, min_length=2, max_length=100)
     avatar_url: str | None = Field(None, max_length=1024)
 
+    @field_validator("avatar_url")
+    @classmethod
+    def validate_avatar_url(cls, v: str | None) -> str | None:
+        """An https image URL, or "" to remove the avatar. Other schemes (http:, data:,
+        javascript:, file:) are rejected."""
+        if v is None:
+            return v
+        v = v.strip()
+        if v == "":
+            return v
+        from urllib.parse import urlparse
+
+        parsed = urlparse(v)
+        if parsed.scheme != "https" or not parsed.netloc or any(c.isspace() for c in v):
+            raise ValueError("Avatar must be an https:// URL.")
+        return v
+
 class PasswordChangeRequest(BaseModel):
     old_password: str
     new_password: str = Field(..., min_length=12, max_length=128)

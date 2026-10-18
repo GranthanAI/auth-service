@@ -11,6 +11,8 @@ class SessionResponse(BaseModel):
     created_at: datetime
     last_seen: datetime
     expires_at: datetime
+    # True for the session making this request (identified by its refresh cookie).
+    is_current: bool = False
 
     class Config:
         from_attributes = True

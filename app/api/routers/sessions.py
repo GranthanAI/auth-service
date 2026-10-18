@@ -5,22 +5,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
 from app.repositories.session_repository import SessionRepository
-from app.repositories.refresh_token_repository import RefreshTokenRepository
-from app.services.refresh_token_service import RefreshTokenService
 from app.api.schemas.session import SessionResponse
+from app.services.session_service import SessionService
 
 router = APIRouter(prefix="/auth/sessions", tags=["sessions"])
 
 @router.get("", response_model=list[SessionResponse])
 async def get_active_sessions(
+    refresh_token: str | None = Cookie(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> list[SessionResponse]:
     """
-    List all active device sessions for the authenticated user.
+    List all active device sessions for the authenticated user. `is_current` marks the
+    session of this browser (from its refresh cookie).
     """
     sessions = await SessionRepository.get_active_by_user_id(db, current_user.id)
-    return sessions  # type: ignore
+    current = await SessionService.current_session(db, current_user.id, refresh_token)
+    return [
+        SessionResponse.model_validate(s).model_copy(update={"is_current": current is not None and s.id == current.id})
+        for s in sessions
+    ]
 
 @router.delete("/{session_id}", status_code=status.HTTP_200_OK)
 async def revoke_session(
@@ -38,11 +43,8 @@ async def revoke_session(
             detail="Session not found or unauthorized."
         )
 
-    # Revoke the associated refresh token in DB
-    await RefreshTokenRepository.revoke_by_id(db, session.refresh_token_id)
-    
-    # Delete the session record
-    await SessionRepository.delete_by_id(db, session_id)
+    # End that device's session (token deleted, not marked revoked: see SessionService).
+    await SessionService.end_session(db, session)
     await db.commit()
     
     return {"message": "Session revoked successfully."}
@@ -55,34 +57,12 @@ async def revoke_all_sessions(
     db: AsyncSession = Depends(get_db)
 ) -> dict:
     """
-    Revoke all device sessions for the user.
-    If exclude_current is true, the active browser session will not be revoked.
+    Sign out device sessions of the user. With exclude_current=true this browser (its
+    refresh cookie) stays signed in; otherwise every session is ended.
     """
-    current_session = None
-    if exclude_current and refresh_token:
-        # Identify active session using refresh token cookie
-        hashed_token = RefreshTokenService._hash_token(refresh_token)
-        db_token = await RefreshTokenRepository.get_by_hash(db, hashed_token)
-        if db_token and db_token.user_id == current_user.id:
-            current_session = await SessionRepository.get_by_refresh_token_id(db, db_token.id)
-
-    if current_session:
-        # Revoke other refresh tokens
-        all_sessions = await SessionRepository.get_active_by_user_id(db, current_user.id)
-        for s in all_sessions:
-            if s.id != current_session.id:
-                await RefreshTokenRepository.revoke_by_id(db, s.refresh_token_id)
-        
-        # Delete other sessions
-        await SessionRepository.delete_all_for_user_except_session(db, current_user.id, current_session.id)
-        message = "All other sessions revoked successfully."
-    else:
-        # Revoke all tokens
-        await RefreshTokenRepository.revoke_all_for_user(db, current_user.id)
-        
-        # Delete all sessions
-        await SessionRepository.delete_all_for_user(db, current_user.id)
-        message = "All sessions revoked successfully."
-
+    cookie = refresh_token if exclude_current else None
+    ended = await SessionService.revoke_other_sessions(db, current_user.id, cookie)
     await db.commit()
-    return {"message": message}
+    kept = exclude_current and await SessionService.current_session(db, current_user.id, refresh_token) is not None
+    message = "All other sessions revoked successfully." if kept else "All sessions revoked successfully."
+    return {"message": message, "sessions_ended": ended}

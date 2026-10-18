@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.refresh_token import RefreshToken
@@ -54,6 +54,14 @@ class RefreshTokenRepository:
         )
         await db.flush()
         return result.rowcount == 1
+
+    @staticmethod
+    async def delete_by_id(db: AsyncSession, token_id: uuid.UUID) -> None:
+        """Removes a token outright (an intentional sign-out). Unlike `revoked=True`, a
+        deleted token is simply unknown if presented again, so it is NOT treated as a
+        replayed/stolen token and does not terminate the user's other sessions."""
+        await db.execute(delete(RefreshToken).where(RefreshToken.id == token_id))
+        await db.flush()
 
     @staticmethod
     async def revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> None:

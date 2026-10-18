@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Cookie, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 
@@ -8,6 +8,7 @@ from app.api.schemas.user import UserResponse, ProfileUpdate, PasswordChangeRequ
 from app.services.user_service import UserService
 from app.services.password_service import PasswordService
 from app.services.audit_service import AuditService
+from app.services.session_service import SessionService
 from app.cache.jwt_blacklist import JWTBlacklist
 from app.core.exceptions import (
     AuthServiceException,
@@ -65,6 +66,7 @@ async def update_profile(
 async def change_password(
     request: Request,
     payload: PasswordChangeRequest,
+    refresh_token: str | None = Cookie(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     redis: Redis | None = Depends(get_redis)
@@ -84,6 +86,10 @@ async def change_password(
             new_password=payload.new_password
         )
         
+        # Credentials changed: sign out every OTHER device (their refresh tokens are
+        # revoked, so they cannot obtain new access tokens). This browser stays signed in.
+        signed_out = await SessionService.revoke_other_sessions(db, current_user.id, refresh_token)
+
         # Blacklist the current active access token (since credentials changed)
         jti = getattr(request.state, "jti", None)
         token_exp = getattr(request.state, "token_exp", None)
@@ -102,7 +108,7 @@ async def change_password(
             ip_address=ip_address,
             user_agent=user_agent
         )
-        return {"message": "Password changed successfully."}
+        return {"message": "Password changed successfully.", "other_sessions_signed_out": signed_out}
     except (IncorrectPasswordException, SamePasswordException) as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
