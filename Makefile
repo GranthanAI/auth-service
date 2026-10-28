@@ -32,7 +32,7 @@ init-db:
 
 # Start FastAPI application server
 run:
-	uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
+	uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8001 --proxy-headers --forwarded-allow-ips "$${FORWARDED_ALLOW_IPS:-127.0.0.1}"
 
 # Retrieve active OTP code for testing
 get-otp:
