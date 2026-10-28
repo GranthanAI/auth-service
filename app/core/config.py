@@ -28,8 +28,19 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 10
 
     # Security Throttling & Lockout Settings
+    # Lockout is per (client IP, email): FAILED_LOGIN_LIMIT failures lock the pair for LOCKOUT_BASE_SECONDS, doubling
+    # per further failure up to LOCKOUT_DURATION_SECONDS (also the counting window). FAILED_LOGIN_EMAIL_CEILING is the
+    # much higher total across all IPs that locks the account itself.
     FAILED_LOGIN_LIMIT: int = 5
+    LOCKOUT_BASE_SECONDS: int = 30
     LOCKOUT_DURATION_SECONDS: int = 1800  # 30 minutes
+    FAILED_LOGIN_EMAIL_CEILING: int = 50
+
+    # Rate limits for the unauthenticated email-sending endpoints (per client IP and per target email).
+    EMAIL_ENDPOINT_IP_LIMIT: int = 10
+    EMAIL_ENDPOINT_IP_WINDOW_SECONDS: int = 3600
+    EMAIL_ENDPOINT_EMAIL_LIMIT: int = 3
+    EMAIL_ENDPOINT_EMAIL_WINDOW_SECONDS: int = 3600
 
     # Email verification. OFF by default: sign-up creates an ACTIVE account and the user can log in
     # immediately (no OTP is generated). Set EMAIL_VERIFICATION_REQUIRED=true to restore the original

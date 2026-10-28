@@ -20,7 +20,8 @@ from app.services.verification_service import VerificationService
 from app.services.password_reset_service import PasswordResetService
 from app.services.audit_service import AuditService
 from app.repositories.user_repository import UserRepository
-from app.security.rate_limiter import RedisRateLimiter
+from app.security.rate_limiter import RedisRateLimiter, client_ip as get_client_ip
+from app.core.config import settings
 from app.cache.login_attempt_cache import LoginAttemptCache
 from app.core.exceptions import (
     UserAlreadyExistsException,
@@ -93,12 +94,15 @@ async def login(
     # Rate limit check (5 attempts per minute)
     await RedisRateLimiter.check_rate_limit(request, "login", limit=5, redis=redis)
 
-    # Brute force lockout check (max 5 failures per 30 minutes)
-    failed_attempts = await LoginAttemptCache.get_failed_attempts(login_payload.email, redis=redis)
-    if failed_attempts >= 5:
+    # Brute force lockout check: per (client IP, email) with exponential backoff, plus a high per-email ceiling.
+    client_ip = get_client_ip(request)
+    remaining = await LoginAttemptCache.get_lockout_remaining(client_ip, login_payload.email, redis=redis)
+    if remaining > 0:
+        minutes = max(1, -(-remaining // 60))
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is temporarily locked out due to multiple failed login attempts. Try again in 30 minutes."
+            detail=f"Account is temporarily locked out due to multiple failed login attempts. Try again in {minutes} minute{'s' if minutes != 1 else ''}.",
+            headers={"Retry-After": str(remaining)},
         )
 
     ip_address = request.client.host if request.client else None
@@ -109,7 +113,7 @@ async def login(
         )
         
         # Reset lockout attempts on successful login
-        await LoginAttemptCache.reset_failed_attempts(login_payload.email, redis=redis)
+        await LoginAttemptCache.reset(client_ip, login_payload.email, redis=redis)
 
         # Fetch user to log
         user = await UserRepository.get_by_email(db, login_payload.email)
@@ -137,7 +141,7 @@ async def login(
         return TokenResponse(access_token=access_token, expires_in=expires_in)
     except IncorrectPasswordException:
         # Increment failed login attempts
-        await LoginAttemptCache.increment_failed_attempts(login_payload.email, redis=redis)
+        await LoginAttemptCache.record_failure(client_ip, login_payload.email, redis=redis)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password."
@@ -289,11 +293,18 @@ async def verify_email(
 async def resend_verification(
     request: Request,
     payload: ResendVerifyRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis: Redis | None = Depends(get_redis)
 ) -> dict:
     """
     Invalidate any active codes and issue a fresh 6-digit email verification OTP.
     """
+    await RedisRateLimiter.check_rate_limit(
+        request, "resend_verification", limit=settings.EMAIL_ENDPOINT_IP_LIMIT,
+        window_seconds=settings.EMAIL_ENDPOINT_IP_WINDOW_SECONDS, redis=redis)
+    await RedisRateLimiter.check_rate_limit(
+        request, "resend_verification", limit=settings.EMAIL_ENDPOINT_EMAIL_LIMIT,
+        window_seconds=settings.EMAIL_ENDPOINT_EMAIL_WINDOW_SECONDS, redis=redis, subject=payload.email)
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
     try:
@@ -318,11 +329,18 @@ async def resend_verification(
 async def forgot_password(
     request: Request,
     payload: ForgotPasswordRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis: Redis | None = Depends(get_redis)
 ) -> dict:
     """
     Request a password reset link/token for the specified email.
     """
+    await RedisRateLimiter.check_rate_limit(
+        request, "forgot_password", limit=settings.EMAIL_ENDPOINT_IP_LIMIT,
+        window_seconds=settings.EMAIL_ENDPOINT_IP_WINDOW_SECONDS, redis=redis)
+    await RedisRateLimiter.check_rate_limit(
+        request, "forgot_password", limit=settings.EMAIL_ENDPOINT_EMAIL_LIMIT,
+        window_seconds=settings.EMAIL_ENDPOINT_EMAIL_WINDOW_SECONDS, redis=redis, subject=payload.email)
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
     try:
