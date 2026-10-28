@@ -108,3 +108,15 @@ The documentation will be available at: **`http://127.0.0.1:8000/docs`**
 ## 📖 API Testing Guide
 For copy-paste JSON payload samples, header structures, and verification workflows for all API endpoints, check out:
 👉 **[docs/testing_payloads.md](file:///c:/Users/hp/Desktop/Granthan/auth-service/docs/testing_payloads.md)**
+
+## Email delivery (OTPs and password-reset links)
+
+OTPs and reset links are queued in the `email_outbox` table in the same transaction as the state change and sent by
+the email worker (retries with exponential backoff, row deleted after a successful send or after `EMAIL_MAX_ATTEMPTS`).
+This table is separate from the Kafka `outbox` on purpose: it holds secrets and is never published.
+
+- `EMAIL_SENDER=smtp` (+ `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM`) for real delivery.
+- `EMAIL_SENDER=console` logs the message as `[DEV EMAIL]` and is only accepted when `ENVIRONMENT` is development or test.
+- Verification OTPs are stored as a keyed hash (`code_hash`), so they cannot be looked up; `get_otp.py` was removed.
+- **Upgrading an existing database:** run `python init_db.py` once. It creates `email_outbox` and renames
+  `email_verifications.verification_code` to `code_hash` (invalidating any outstanding plaintext OTPs).

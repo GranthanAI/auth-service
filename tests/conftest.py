@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 import app.models.email_verification  # noqa: F401  (register every table on Base.metadata)
 import app.models.audit_log  # noqa: F401
 import app.models.outbox  # noqa: F401
+import app.models.email_outbox  # noqa: F401
 import app.models.password_reset  # noqa: F401
 import app.models.refresh_token  # noqa: F401
 import app.models.session  # noqa: F401

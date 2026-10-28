@@ -145,10 +145,9 @@ async def _noop(*a, **k):
 def test_email_endpoints_are_rate_limited_per_email_and_per_ip(monkeypatch, path):
     from app.services.password_reset_service import PasswordResetService
     from app.services.verification_service import VerificationService
-    from app.core.exceptions import UserNotFoundException
 
     async def unknown(*a, **k):
-        raise UserNotFoundException("x")
+        return None
 
     monkeypatch.setattr(PasswordResetService, "request_password_reset", unknown)
     monkeypatch.setattr(VerificationService, "resend_verification", unknown)

@@ -14,6 +14,9 @@ from app.repositories.session_repository import SessionRepository
 from app.security.password_hasher import PasswordHasher
 from app.security.validators import validate_password_strength
 
+from app.email.queue import EmailQueue
+from app.email.templates import KIND_PASSWORD_RESET
+from app.models.user import User
 from app.events.outbox_publisher import OutboxPublisher
 from app.events.auth_events import PasswordResetEvent
 
@@ -23,27 +26,24 @@ class PasswordResetService:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
     @classmethod
-    async def request_password_reset(cls, db: AsyncSession, email: str) -> str:
+    async def request_password_reset(cls, db: AsyncSession, email: str) -> User | None:
         """
-        Generate a secure recovery token, save its SHA-256 hash in PostgreSQL, 
-        print the raw token to the console (developer log), and return it.
+        Generate a secure recovery token, save its SHA-256 hash in PostgreSQL and queue the reset email that carries
+        the raw token (email_outbox, same transaction). Returns the user, or None for an unknown email: the caller
+        must answer identically either way so the endpoint cannot be used to discover accounts. The raw token is
+        never returned, logged or printed.
         """
         user = await UserRepository.get_by_email(db, email)
         if not user:
-            raise UserNotFoundException(email)
+            return None
 
         raw_token = secrets.token_urlsafe(32)
         token_hash = cls._hash_token(raw_token)
         expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.PASSWORD_RESET_EXPIRE_HOURS)
 
         await PasswordResetRepository.create(db, user.id, token_hash, expires_at)
-
-        # Log to terminal console in Development Mode
-        print(f"\n[DEV MODE] =========================================")
-        print(f"[DEV MODE] Password Reset Token for user {user.id}: {raw_token}")
-        print(f"[DEV MODE] =========================================\n")
-
-        return raw_token
+        await EmailQueue.enqueue(db, KIND_PASSWORD_RESET, user.email, {"token": raw_token})
+        return user
 
     @classmethod
     async def reset_password(cls, db: AsyncSession, raw_token: str, new_password: str) -> None:

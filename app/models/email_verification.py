@@ -21,8 +21,9 @@ class EmailVerification(Base):
         nullable=False,
         index=True
     )
-    verification_code: Mapped[str] = mapped_column(
-        String(6),
+    # Keyed hash of the 6-digit OTP (app.security.otp.hash_otp); the raw code only ever exists in the email.
+    code_hash: Mapped[str] = mapped_column(
+        String(64),
         nullable=False
     )
     expires_at: Mapped[datetime] = mapped_column(

@@ -1,4 +1,4 @@
-from pydantic import model_validator
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -48,6 +48,29 @@ class Settings(BaseSettings):
     # Flipping it to false also lets accounts that are still PENDING log in.
     EMAIL_VERIFICATION_REQUIRED: bool = False
 
+    # Email delivery. "console" logs messages (OTPs, reset links) and is only allowed when ENVIRONMENT is development
+    # or test; every other environment must use "smtp". Startup fails fast otherwise.
+    EMAIL_SENDER: str = "console"
+    EMAIL_FROM: str = "no-reply@granthan.com"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: SecretStr | None = None
+    SMTP_STARTTLS: bool = True
+    SMTP_USE_SSL: bool = False  # implicit TLS (port 465); takes precedence over STARTTLS
+    SMTP_TIMEOUT_SECONDS: float = 10.0
+    # Public frontend origin used to build the password-reset link.
+    FRONTEND_BASE_URL: str = "http://localhost:3000"
+    # Key for hashing stored verification OTPs. Empty = derive from JWT_SECRET_KEY.
+    OTP_HMAC_KEY: str = ""
+
+    # Email dispatch worker (reads the email_outbox table)
+    EMAIL_WORKER_POLL_INTERVAL_SECONDS: float = 2.0
+    EMAIL_BATCH_SIZE: int = 20
+    EMAIL_MAX_ATTEMPTS: int = 6
+    EMAIL_RETRY_BASE_SECONDS: int = 30
+    EMAIL_RETRY_MAX_SECONDS: int = 3600
+
     # Token Expirations
     OTP_EXPIRE_MINUTES: int = 15
     PASSWORD_RESET_EXPIRE_HOURS: int = 1
@@ -60,6 +83,12 @@ class Settings(BaseSettings):
     KAFKA_LINGER_MS: int = 5
 
 # Instantiated once to act as a global singleton config
+
+    @model_validator(mode="after")
+    def _validate_email_config(self):
+        from app.email.validation import validate_sender_config
+        validate_sender_config(self.EMAIL_SENDER, self.ENVIRONMENT, self.SMTP_HOST)
+        return self
 
     @model_validator(mode="after")
     def _fail_fast_on_unsafe_production_config(self):

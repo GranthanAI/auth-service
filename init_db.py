@@ -11,6 +11,7 @@ from app.models.email_verification import EmailVerification
 from app.models.password_reset import PasswordReset
 from app.models.audit_log import AuditLog
 from app.models.outbox import Outbox
+from app.models.email_outbox import EmailOutbox
 
 from app.core.config import settings
 
@@ -48,10 +49,33 @@ async def create_tables():
         
     await engine.dispose()
 
+# Idempotent one-off migration: email_verifications.verification_code (plaintext 6 digits) -> code_hash (64-char hash).
+# Any OTP issued before the migration is invalidated (they were plaintext and expire in minutes anyway).
+HASH_OTP_MIGRATION = """
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'email_verifications' AND column_name = 'verification_code') THEN
+    UPDATE email_verifications SET used = TRUE;
+    ALTER TABLE email_verifications RENAME COLUMN verification_code TO code_hash;
+    ALTER TABLE email_verifications ALTER COLUMN code_hash TYPE VARCHAR(64);
+  END IF;
+END $$;
+"""
+
+
+async def migrate_hash_otp():
+    engine = create_async_engine(settings.DATABASE_URL)
+    async with engine.begin() as conn:
+        await conn.execute(text(HASH_OTP_MIGRATION))
+    await engine.dispose()
+
+
 async def main():
     try:
         await create_database_if_not_exists()
         await create_tables()
+        await migrate_hash_otp()
         print("Database initialization completed successfully.")
     except Exception as e:
         print(f"Error during database initialization: {e}")

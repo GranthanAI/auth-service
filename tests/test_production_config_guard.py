@@ -5,7 +5,7 @@ import pytest
 from app.core.config import Settings
 
 STRONG = "k9Qx2mV7pLr4Zt8WyB3nHd6Fs1JcUe5A"
-GOOD = dict(ENVIRONMENT="production", JWT_SECRET_KEY=STRONG)
+GOOD = dict(ENVIRONMENT="production", JWT_SECRET_KEY=STRONG, EMAIL_SENDER="smtp", SMTP_HOST="smtp.example.com")
 BAD = ["supersecretjwtkeyforauthservicelocaldvelopment12345", "short", ""]
 
 

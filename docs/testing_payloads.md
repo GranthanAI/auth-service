@@ -59,7 +59,7 @@ This document lists every endpoint implemented in the **Granthan Auth Service** 
     "code": "123456"
   }
   ```
-  *(Replace `123456` with the OTP printed to the console).*
+  *(Replace `123456` with the OTP from the email (dev: the `[DEV EMAIL]` log line)).*
 * **Response JSON (200 OK):**
   ```json
   {
@@ -79,7 +79,7 @@ This document lists every endpoint implemented in the **Granthan Auth Service** 
 * **Response JSON (200 OK):**
   ```json
   {
-    "message": "A new verification code has been generated and printed to the developer console."
+    "message": "If an account exists for that email and still needs verification, a new verification code has been sent."
   }
   ```
 
@@ -150,7 +150,7 @@ This document lists every endpoint implemented in the **Granthan Auth Service** 
 * **Response JSON (200 OK):**
   ```json
   {
-    "message": "Password reset token generated and printed to the developer console."
+    "message": "If an account exists for that email, a password reset link has been sent."
   }
   ```
   *(Note: A cryptographically secure recovery token is printed to your uvicorn terminal console).*

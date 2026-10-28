@@ -308,20 +308,18 @@ async def resend_verification(
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
     try:
-        await VerificationService.resend_verification(db, payload.email)
-        
-        # Log Audit Log
-        user = await UserService.get_user_by_email(db, payload.email)
-        await AuditService.log_action(
-            db=db,
-            user_id=user.id,
-            action="VERIFICATION_RESENT",
-            ip_address=ip_address,
-            user_agent=user_agent
-        )
-        return {"message": "A new verification code has been generated and printed to the developer console."}
-    except UserNotFoundException as e:
-         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        user = await VerificationService.resend_verification(db, payload.email)
+
+        if user:
+            await AuditService.log_action(
+                db=db,
+                user_id=user.id,
+                action="VERIFICATION_RESENT",
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+        # Same response whether or not the address has an account, so this cannot be used to enumerate users.
+        return {"message": "If an account exists for that email and still needs verification, a new verification code has been sent."}
     except AuthServiceException as e:
          raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -344,21 +342,18 @@ async def forgot_password(
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
     try:
-        await PasswordResetService.request_password_reset(db, payload.email)
-        
-        # Log Audit Log
-        user = await UserService.get_user_by_email(db, payload.email)
-        await AuditService.log_action(
-            db=db,
-            user_id=user.id,
-            action="PASSWORD_RESET_REQUESTED",
-            ip_address=ip_address,
-            user_agent=user_agent
-        )
-        return {"message": "Password reset token generated and printed to the developer console."}
-    except UserNotFoundException:
-         # Prevent email discovery by returning a successful status
-         return {"message": "Password reset token generated and printed to the developer console."}
+        user = await PasswordResetService.request_password_reset(db, payload.email)
+
+        if user:
+            await AuditService.log_action(
+                db=db,
+                user_id=user.id,
+                action="PASSWORD_RESET_REQUESTED",
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+        # Same response whether or not the address has an account, so this cannot be used to enumerate users.
+        return {"message": "If an account exists for that email, a password reset link has been sent."}
     except AuthServiceException as e:
          raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

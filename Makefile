@@ -1,4 +1,3 @@
-.PHONY: help sync init-db run clean infra infra-down test get-otp
 
 # Default target: show help menu
 all: help
@@ -10,7 +9,6 @@ help:
 	@echo "  make infra-down - Stop local Redis, Zookeeper, and Kafka containers"
 	@echo "  make init-db    - Check/create database and build database tables"
 	@echo "  make run        - Launch FastAPI application dev server with auto-reload"
-	@echo "  make get-otp    - Get latest active verification OTP for an email (e.g. make get-otp EMAIL=user@example.com)"
 	@echo "  make test       - Run unit tests using pytest"
 	@echo "  make clean      - Remove virtual environment (.venv) and byte caches"
 
@@ -34,9 +32,6 @@ init-db:
 run:
 	uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8001 --proxy-headers --forwarded-allow-ips "$${FORWARDED_ALLOW_IPS:-127.0.0.1}"
 
-# Retrieve active OTP code for testing
-get-otp:
-	uv run python get_otp.py --email $(or $(EMAIL),testuser@example.com)
 
 # Run tests
 test:

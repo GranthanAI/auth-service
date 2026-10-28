@@ -10,12 +10,12 @@ class VerificationRepository:
     async def create(
         db: AsyncSession,
         user_id: uuid.UUID,
-        code: str,
+        code_hash: str,
         expires_at: datetime
     ) -> EmailVerification:
         db_verification = EmailVerification(
             user_id=user_id,
-            verification_code=code,
+            code_hash=code_hash,
             expires_at=expires_at
         )
         db.add(db_verification)
@@ -26,14 +26,14 @@ class VerificationRepository:
     async def get_active_code(
         db: AsyncSession,
         user_id: uuid.UUID,
-        code: str
+        code_hash: str
     ) -> EmailVerification | None:
         now = datetime.now(timezone.utc)
         result = await db.execute(
             select(EmailVerification)
             .where(
                 EmailVerification.user_id == user_id,
-                EmailVerification.verification_code == code,
+                EmailVerification.code_hash == code_hash,
                 EmailVerification.used == False,
                 EmailVerification.expires_at > now
             )
